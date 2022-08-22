@@ -127,6 +127,7 @@ class Download_threader:
         with open('{}\part{}.tmp'.format(self.download_path, part), 'wb') as file:
             for i in res.iter_content(chunk_size= 64 * 1024):
                 file.write(i)
+                file.flush()
                 self.get_size += len(i)  # 更新视频已经下载大小
                 time.sleep(0.005)  # 防线程堵塞, 可注释
     
@@ -138,6 +139,7 @@ class Download_threader:
             os.remove('{}\part{}.tmp'.format(self.download_path, i))
             with open('{}\{}.m4s'.format(self.download_path, self.file_name), 'ab+') as file:
                 file.write(content)
+                file.flush()
     
     def download_thread(self):
         # 多线程下载
@@ -167,10 +169,10 @@ class Download_threader:
         tp.shutdown(wait=True)
         self.copy_tmps()
 
-def ep(ep_id, headers):
+def ep(headers):
     # 番剧批量视频链接获取, 批量下载尚未支持
-    res = requests.get('https://www.bilibili.com/bangumi/play/ep477109', headers=headers)
-    soup = BeautifulSoup(res.text, 'html')
+    res = requests.get('https://www.bilibili.com/bangumi/play/ep266323', headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
 
     for i in soup.find_all('script'):
         if 'window.__INITIAL_STATE__' in str(i):
@@ -264,12 +266,13 @@ if __name__ == '__main__':
         login(headers)
         print('Login successful. Login cookies is saved to config.json.')
         sys.exit(0)    
-    if args.bvid==None and args.ep==None:
-        print('Please enter BVID or EPID.')
+    if args.bvid==None:
+        print('Please enter BVID.')
         print("Use 'python bilibili.py -h' to show helps.")
         sys.exit(1)
     if args.qn==None:
         print('Please enter the video quality.')
+        print("Use 'python bilibili.py -h' to show helps.")
         sys.exit(1)
 
     download_path = os.path.dirname(os.path.realpath(__file__)) + r'\Download'
