@@ -15,7 +15,8 @@
 ### 2.1 相关参数
 
     -h, --help     查看帮助信息
-    -b, --bvid     视频BV号(required)
+    -b, --bvid     视频BV号
+    -e, --epid     番剧EP号
     -q, --qn       视频质量(required), 支持参数为[16, 32, 64, 80, 112, 116, 120, 127]
     -n, --name     视频重新命名
     -l, --login    仅登录, 生成config.json文件
@@ -36,9 +37,14 @@
     examples:
         python bilibili.py -b BV1E44y1t7Kn -q 120
         python bilibili.py -b BV1E44y1t7Kn -q 120 -n test -t 16 -o
+        python bilibili.py -e 400972 -q 80 
 
 ## 3. Tips
-* 目前还未支持番剧批量下载， 其实番剧的批量链接获取函数已经完成，等后续将会更新此功能
+* 目前已经支持番剧批量下载，需要输入番剧的ep号
+
+    链接示例: 'https://www.bilibili.com/bangumi/play/ep400973' [ep号为400973]
+
+    请用网页端打开番剧后再次选择任意一集，即可获取到ep号
 * 音频目前获取的默认为最高质量音频，未提供可选择接口，若有需求，可自行更改源码
 
     ```python
