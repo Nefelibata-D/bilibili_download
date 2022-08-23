@@ -169,9 +169,9 @@ class Download_threader:
         tp.shutdown(wait=True)
         self.copy_tmps()
 
-def ep(headers):
+def ep(headers, epid):
     # 番剧批量视频链接获取, 批量下载尚未支持
-    res = requests.get('https://www.bilibili.com/bangumi/play/ep266323', headers=headers)
+    res = requests.get('https://www.bilibili.com/bangumi/play/ep{}'.format(epid), headers=headers)
     soup = BeautifulSoup(res.text, 'html.parser')
 
     for i in soup.find_all('script'):
@@ -184,8 +184,9 @@ def ep(headers):
 
     for ep in inf:
         ep_inf = {
-            'aid' : ep['aid'],
-            'cid' : ep['cid'],
+            # 'aid' : ep['aid'],
+            # 'name' : ep['name'],
+            # 'cid' : ep['cid'],
             'bvid' : ep['bvid'],
             'share_copy' : ep['share_copy'],
         }
@@ -251,7 +252,7 @@ parser.add_argument('-b', '--bvid', type=str, help="指定视频BV号")
 parser.add_argument('-q', '--qn',  type=int, choices=[16,32,64,80,112,116,120,127], help="超高清8K:127 超清4K:120 1080P60:116 1080P+:112 1080P:80 720P:64 480P:32 320P:16")
 parser.add_argument('-t', '--thread',  type=int, default=8, choices=[2,4,8,16,32], help='下载线程数, 默认为8')
 parser.add_argument('-n', '--name',  type=str, default = '', help='对下载视频重新命名')
-# parser.add_argument('-e', '--ep',  type=str, help='指定番剧号')
+parser.add_argument('-e', '--epid',  type=str, help='指定番剧号')
 parser.add_argument('-l', '--login', action='store_true', default=False, help='仅登录')
 parser.add_argument('-o', '--output', action='store_true', default=False, help='保留ffmpeg输出')
 
@@ -266,8 +267,8 @@ if __name__ == '__main__':
         login(headers)
         print('Login successful. Login cookies is saved to config.json.')
         sys.exit(0)    
-    if args.bvid==None:
-        print('Please enter BVID.')
+    if args.bvid==None and args.epid==None:
+        print('Please enter BVID or EPID')
         print("Use 'python bilibili.py -h' to show helps.")
         sys.exit(1)
     if args.qn==None:
@@ -284,7 +285,13 @@ if __name__ == '__main__':
     print('')
     
     if os.path.exists(os.path.dirname(os.path.realpath(__file__)) + r'\\ffmpeg.exe'):
-        main(args.bvid, args.qn, args.thread, download_path, args.output, args.name, headers)
+        if args.bvid:
+            main(args.bvid, args.qn, args.thread, download_path, args.output, args.name, headers)
+        if args.epid:
+            for i in ep(headers, args.epid):
+                print('=================================================')
+                main(i['bvid'], args.qn, args.thread, download_path, args.output, i['share_copy'], headers)
+                print('')
     else:
         print("Can't find ffmpeg.exe. Please put ffmpeg.exe in your working directory.")
         sys.exit(1)
