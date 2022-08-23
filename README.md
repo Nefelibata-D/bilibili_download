@@ -22,6 +22,8 @@
     -l, --login    仅登录, 生成config.json文件
     -t, --thread   下载视频线程数, 默认为8线程, 支持线程数为[2, 4, 8, 16, 32]
     -o, --output   允许ffmpeg输出视频合并日志
+    -s, --start    番剧批量下载开始集数
+    -f, --final    番剧批量下载结束集数
     
 ### 2.2 视频质量（qn）参数说明
 
@@ -38,9 +40,10 @@
         python bilibili.py -b BV1E44y1t7Kn -q 120
         python bilibili.py -b BV1E44y1t7Kn -q 120 -n test -t 16 -o
         python bilibili.py -e 400972 -q 80 
+        python bilibili.py -e 400972 -q 80 -s 2 -f 4
 
 ## 3. Tips
-* 目前已经支持番剧批量下载，需要输入番剧的ep号
+* 目前已经支持番剧批量下载，番剧批量下载指定集数，需要输入番剧的ep号
 
     链接示例: 'https://www.bilibili.com/bangumi/play/ep400973' [ep号为400973]
 

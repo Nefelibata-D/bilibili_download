@@ -127,8 +127,8 @@ class Download_threader:
         with open('{}\part{}.tmp'.format(self.download_path, part), 'wb') as file:
             for i in res.iter_content(chunk_size= 64 * 1024):
                 file.write(i)
-                file.flush()
                 self.get_size += len(i)  # 更新视频已经下载大小
+                file.flush()
                 time.sleep(0.005)  # 防线程堵塞, 可注释
     
     def copy_tmps(self):
@@ -212,6 +212,9 @@ def main(bvid:str, qn:int, thread:int, download_path:str, output:int, name:str, 
         else:
             print('Login failed. Please try again later.')
             sys.exit(1)
+    
+    if os.path.exists('{}\\output.mp4'.format(download_path)):
+        os.remove('{}\output.mp4'.format(download_path))
 
     mid = cookies.split(';')[0].split('=')[1]
     cid = bvid_to_cid(bvid, headers)
@@ -255,6 +258,8 @@ parser.add_argument('-n', '--name',  type=str, default = '', help='对下载视�
 parser.add_argument('-e', '--epid',  type=str, help='指定番剧号')
 parser.add_argument('-l', '--login', action='store_true', default=False, help='仅登录')
 parser.add_argument('-o', '--output', action='store_true', default=False, help='保留ffmpeg输出')
+parser.add_argument('-s', '--start', type=int, default=None, help='番剧批量下载开始集数')
+parser.add_argument('-f', '--final', type=int, default=None, help='番剧批量下载结束集数')
 
 args = parser.parse_args()
 
@@ -281,6 +286,7 @@ if __name__ == '__main__':
         os.mkdir(download_path)  # 创建下载目录
     except FileExistsError:
         pass
+    print('')
     print('Download Directory : ' + download_path)
     print('')
     
@@ -288,10 +294,21 @@ if __name__ == '__main__':
         if args.bvid:
             main(args.bvid, args.qn, args.thread, download_path, args.output, args.name, headers)
         if args.epid:
-            for i in ep(headers, args.epid):
-                print('=================================================')
-                main(i['bvid'], args.qn, args.thread, download_path, args.output, i['share_copy'], headers)
-                print('')
+            eps = ep(headers, args.epid)
+            if args.start and args.final:
+                print('Downloading episodes from {} to {}'.format(args.start, args.final))
+                for i in range(args.start - 1, args.final):
+                    print('=================================================')
+                    main(eps[i]['bvid'], args.qn, args.thread, download_path, args.output, eps[i]['share_copy'], headers)
+                    print('')
+            else:
+                index = 0
+                for i in eps:
+                    index += 1
+                    print('=================================================')
+                    print('Video index: {}'.format(str(index)))
+                    main(i['bvid'], args.qn, args.thread, download_path, args.output, i['share_copy'], headers)
+                    print('')
     else:
         print("Can't find ffmpeg.exe. Please put ffmpeg.exe in your working directory.")
         sys.exit(1)
