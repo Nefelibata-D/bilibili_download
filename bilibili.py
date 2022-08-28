@@ -256,7 +256,8 @@ parser.add_argument('-q', '--qn',  type=int, choices=[16,32,64,80,112,116,120,12
 parser.add_argument('-t', '--thread',  type=int, default=8, choices=[2,4,8,16,32], help='下载线程数, 默认为8')
 parser.add_argument('-n', '--name',  type=str, default = '', help='对下载视频重新命名')
 parser.add_argument('-e', '--epid',  type=str, help='指定番剧号')
-parser.add_argument('-l', '--login', action='store_true', default=False, help='仅登录')
+parser.add_argument('-l', '--login', action='store_true', default=False, help='扫二维码登录')
+parser.add_argument('-c', '--cookie', action='store_true', default=False, help='手动输入cookies登录')
 parser.add_argument('-o', '--output', action='store_true', default=False, help='保留ffmpeg输出')
 parser.add_argument('-s', '--start', type=int, default=None, help='番剧批量下载开始集数')
 parser.add_argument('-f', '--final', type=int, default=None, help='番剧批量下载结束集数')
@@ -269,9 +270,19 @@ if __name__ == '__main__':
         'Referer': 'https://www.bilibili.com/'
     } 
     if args.login:
-        login(headers)
+        cookies = login(headers)
+        set_config(cookies, os.path.dirname(os.path.realpath(__file__)))
         print('Login successful. Login cookies is saved to config.json.')
         sys.exit(0)    
+    if args.cookie:
+        c = input('Enter your account cookies: ')
+        cookies = ''
+        for i in c.split(';'):
+            if 'SESSDATA' in i or 'bili_jct' in i or 'DedeUserID' in i or 'DedeUserID__ckMd5' in i:
+                print('================================================================')
+                cookies += i + ';'
+        
+        print(cookies)
     if args.bvid==None and args.epid==None:
         print('Please enter BVID or EPID')
         print("Use 'python bilibili.py -h' to show helps.")
