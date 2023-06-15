@@ -97,6 +97,17 @@ def heartbeat(aid: int, mid: int, cid: int, headers: dict):
     return res.json()['ttl']
 
 
+def dolby(cid: int, headers: dict):
+    url = 'https://api.bilibili.com//pgc/player/web/v2/playurl?support_multi_audio=true&cid={}&fnval=4048'.format(cid)
+    res = requests.get(url, headers=headers)
+    result = res.json()['result']['video_info']['dash']['dolby']['audio'][0]
+    url = result['base_url']
+    codecs = result['codecs']
+    size = result['size']
+
+    return url, codecs, size
+
+
 # noinspection PyShadowingNames,PyUnusedLocal
 def detail(bvid: str, cid: int, headers: dict, choice):
     #  fourk为4k请求参数, fnval=4048为8k请求参数
@@ -104,14 +115,6 @@ def detail(bvid: str, cid: int, headers: dict, choice):
     #  |"高清 1080P60", 116      |"高清 1080P+", 112
     #  |"高清 1080P", 80         |"高清 720P", 64
     #  |"清晰 480P", 32          |"流畅 360P" 16
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1336.2',
-        'Referer': 'https://www.bilibili.com/',
-        'Cookie': 'DedeUserID=185714308;DedeUserID__ckMd5=f3cb2f40fbe154a0;Expires=15551000;SESSDATA=36c5af02'
-                  '%2C1686820000%2C33b25%2Ac1;bili_jct=ce601029fff1e01dc63350bece94c3aa;'
-    }
 
     qn = {'127': '超高清 8K', '126': '杜比视界', '120': '超清 4K', '116': '高清 1080P60', '112': '高清 1080P+',
           '80': '高清 1080P', '64': '高清 720P', '32': '清晰 480P', '16': '流畅 360P'}
@@ -121,14 +124,17 @@ def detail(bvid: str, cid: int, headers: dict, choice):
     url = 'https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&fourk=1&fnval=4048'.format(bvid, cid)
     res = requests.get(url=url, headers=headers)
 
-    if choice is None:
+    if choice is None:  # 在番剧批量下载中，用于保持用户最初选择
         choice = []
         os.system('cls')
+
+        # 视频信息输出
         print('')
         print('============================================================')
         print('Video Quailty: ')
         print('')
         times = 0
+        have_dolby = False  # 检测是否有视频对应杜比音效
         for i in res.json()['data']['dash']['video']:
             id = i['id']
             base_url = i['base_url']
@@ -136,14 +142,16 @@ def detail(bvid: str, cid: int, headers: dict, choice):
             quality = qn[str(id)]
             size = round(
                 int(requests.get(base_url, headers=headers, stream=True).headers['Content-Length']) / 1024 / 1024)
+            if id == 126:
+                have_dolby = True
             if size > 1024:
-                print('[{:0>2}]  Quailty: {: <10}  Size: {: <8}  Codec: {}  '.format(times, qn[str(id)],
-                                                                                     str(round(size / 1024, 2)) + ' GB',
-                                                                                     codecs))
+                print('[{:0>2}]  Quailty: {: <10}  Size: {: <4} {}  Codec: {}  '.format(times, qn[str(id)],
+                                                                                        str(round(size / 1024, 2)),
+                                                                                        'GB', codecs))
             else:
                 print(
-                    '[{:0>2}]  Quailty: {: <10}  Size: {: <8}  Codec: {}  '.format(times, qn[str(id)], str(size) + 'MB',
-                                                                                   codecs))
+                    '[{:0>2}]  Quailty: {: <10}  Size: {: <4} {}  Codec: {}  '.format(times, qn[str(id)], str(size),
+                                                                                      'MB', codecs))
             all_inf.append((id, base_url, codecs, quality))
             times += 1
         print('[{:0>2}]  Not download video (Only audio)'.format(times))
@@ -155,12 +163,23 @@ def detail(bvid: str, cid: int, headers: dict, choice):
             video = all_inf[int(video_number)][1]
         all_inf.clear()
 
+        # 音频信息输出
         os.system('cls')
         print('')
         print('============================================================')
         print('Audio Quailty: ')
         print('')
         times = 0
+
+        if have_dolby:  # 获取杜比音效信息
+            dolby_inf = dolby(cid, headers)
+            base_url = dolby_inf[0]
+            codecs = dolby_inf[1]
+            size = round(dolby_inf[2] / 1024 / 1024)
+            all_inf.append((base_url, codecs, size))
+            print('[{:0>2}]  Size: {: <8}  Codec: {}     (杜比音效)'.format(times, str(size) + ' MB', codecs))
+            times += 1
+
         for i in res.json()['data']['dash']['audio']:
             base_url = i['baseUrl']
             codecs = i['codecs']
@@ -196,7 +215,7 @@ def detail(bvid: str, cid: int, headers: dict, choice):
     return video, audio, choice
 
 
-# noinspection PyUnboundLocalVariable,PyShadowingNames,PyShadowingBuiltins
+# noinspection PyUnboundLocalVariable,PyShadowingNames,PyShadowingBuiltins,PyPep8Naming
 class Download_threader:
     def __init__(self, url: str, cookie: str, size: int, thread: int, progress, task, file_name: str,
                  download_path: str):
@@ -211,14 +230,14 @@ class Download_threader:
         self.file_name = file_name
         self.download_path = download_path
 
-    def download_parts(self, part: int, cookie: str, range: str):
+    def download_parts(self, part: int, cookie: str, Range: str):
         # 视频分片下载
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
                           'Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1336.2',
             'Referer': 'https://www.bilibili.com/',
             'Cookie': cookie,
-            'Range': range  # 指定视频分片链接
+            'Range': Range  # 指定视频分片链接
         }
         res = requests.get(url=self.url, headers=headers, stream=True)  # 流式下载视频
         with open(r'{}\part{}.tmp'.format(self.download_path, part), 'wb') as file:
@@ -244,15 +263,15 @@ class Download_threader:
         tp = ThreadPoolExecutor(max_workers=self.thread)
         for i in range(self.thread):
             if i < self.thread - 1:
-                range = 'bytes={}-{}'.format(int(self.file_size / self.thread) * i,
+                Range = 'bytes={}-{}'.format(int(self.file_size / self.thread) * i,
                                              int(self.file_size / self.thread) * (i + 1) - 1)
             else:
                 if self.file_name == 'video':
-                    range = 'bytes={}-{}'.format(int(self.file_size / self.thread) * i, self.file_size)
+                    Range = 'bytes={}-{}'.format(int(self.file_size / self.thread) * i, self.file_size)
                 else:
-                    range = 'bytes={}-{}'.format(int(self.file_size / self.thread) * i,
+                    Range = 'bytes={}-{}'.format(int(self.file_size / self.thread) * i,
                                                  self.file_size - 1)  # 请求音频有概率出现不能分片问题
-            future = tp.submit(self.download_parts, i, self.cookie, range)
+            future = tp.submit(self.download_parts, i, self.cookie, Range)
             futures.append(future)
 
         while True:
@@ -329,7 +348,6 @@ def main(bvid: str, thread: int, download_path: str, output: int, name: str, hea
     print('')
     print("File name: " + file_name)
     print('')
-
 
     if tuple[0]:
         with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
