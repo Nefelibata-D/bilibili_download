@@ -131,7 +131,7 @@ def detail(bvid: str, cid: int, headers: dict, choice):
         # 视频信息输出
         print('')
         print('============================================================')
-        print('Video Quailty: ')
+        print('Video Quality: ')
         print('')
         times = 0
         have_dolby = False  # 检测是否有视频对应杜比音效
@@ -145,12 +145,12 @@ def detail(bvid: str, cid: int, headers: dict, choice):
             if id == 126:
                 have_dolby = True
             if size > 1024:
-                print('[{:0>2}]  Quailty: {: <10}  Size: {: <4} {}  Codec: {}  '.format(times, qn[str(id)],
+                print('[{:0>2}]  Quality: {: <10}  Size: {: <4} {}  Codec: {}  '.format(times, qn[str(id)],
                                                                                         str(round(size / 1024, 2)),
                                                                                         'GB', codecs))
             else:
                 print(
-                    '[{:0>2}]  Quailty: {: <10}  Size: {: <4} {}  Codec: {}  '.format(times, qn[str(id)], str(size),
+                    '[{:0>2}]  Quality: {: <10}  Size: {: <4} {}  Codec: {}  '.format(times, qn[str(id)], str(size),
                                                                                       'MB', codecs))
             all_inf.append((id, base_url, codecs, quality))
             times += 1
@@ -200,7 +200,6 @@ def detail(bvid: str, cid: int, headers: dict, choice):
 
         choice.append(video_number)
         choice.append(audio_number)
-        print(choice)
     else:
         try:
             video = res.json()['data']['dash']['video'][int(choice[0])]['base_url']
@@ -213,6 +212,13 @@ def detail(bvid: str, cid: int, headers: dict, choice):
             audio = None
 
     return video, audio, choice
+
+
+def get_ep_bvid(aid: int, cid: int, headers: dict):
+    res = requests.get("https://api.bilibili.com/x/player/wbi/v2?aid={}&cid={}".format(aid, cid), headers=headers)
+    bvid = res.json()['data']['bvid']
+
+    return bvid
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames,PyShadowingBuiltins,PyPep8Naming
@@ -289,31 +295,24 @@ class Download_threader:
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames
-def ep(headers, epid):
-    # 番剧批量视频链接获取, 批量下载尚未支持
-    res = requests.get('https://www.bilibili.com/bangumi/play/{}'.format(epid), headers=headers)
-    soup = BeautifulSoup(res.text, 'html.parser')
+def get_ep_list(headers, session_id):
+    # 通过session_id获取所有视频的aid、cid
+    res = requests.get('https://api.bilibili.com/pgc/web/season/section?season_id={}'.format(session_id),
+                       headers=headers)
+    ep_json = res.json()['result']['main_section']['episodes']
+    ep_list = []
 
-    for i in soup.find_all('script'):
-        if 'window.__INITIAL_STATE__' in str(i):
-            all_inf = json.loads(
-                str(i).split('</script>')[0].split('window.__INITIAL_STATE__=')[1].split(';(function')[0])
-            break
+    for i in ep_json:
+        aid = i['aid']
+        cid = i['cid']
+        bvid = get_ep_bvid(aid, cid, headers)
+        title = i['long_title']
+        ep_list.append({
+            'bvid': bvid,
+            'title': title
+        })
 
-    inf = all_inf['mediaInfo']['episodes']
-    episodes = []
-
-    for ep in inf:
-        ep_inf = {
-            # 'aid' : ep['aid'],
-            # 'name' : ep['name'],
-            # 'cid' : ep['cid'],
-            'bvid': ep['bvid'],
-            'share_copy': ep['share_copy'],
-        }
-        episodes.append(ep_inf)
-
-    return episodes
+    return ep_list
 
 
 # noinspection PyShadowingBuiltins,PyShadowingNames
@@ -395,7 +394,7 @@ parser = argparse.ArgumentParser(description='bilibili download ')
 parser.add_argument('-b', '--bvid', type=str, help="指定视频BV号")
 parser.add_argument('-t', '--thread', type=int, default=8, choices=[2, 4, 8, 16, 32], help='下载线程数, 默认为8')
 parser.add_argument('-n', '--name', type=str, default='', help='对下载视频重新命名')
-parser.add_argument('-e', '--epid', type=str, help='指定番剧号')
+parser.add_argument('-ss', '--ssid', type=int, help='指定番剧ss号')
 parser.add_argument('-l', '--login', action='store_true', default=False, help='扫二维码登录')
 # parser.add_argument('-c', '--cookie', action='store_true', default=False, help='手动输入cookies登录')
 parser.add_argument('-o', '--output', action='store_true', default=False, help='保留ffmpeg输出')
@@ -411,7 +410,6 @@ if __name__ == '__main__':
         'Referer': 'https://www.bilibili.com/'
     }
     if args.login:
-        print('f')
         cookies = login(headers)
         set_config(cookies, os.path.dirname(os.path.realpath(__file__)))
         print('Login successful. Login cookies is saved to config.json.')
@@ -425,7 +423,7 @@ if __name__ == '__main__':
                 print('================================================================')
                 cookies += i + ';'
     '''
-    if args.bvid is None and args.epid is None:
+    if args.bvid is None and args.ssid is None:
         print('Please enter BVID or EPID')
         print("Use 'python bilibili.py -h' to show helps.")
         sys.exit(1)
@@ -440,27 +438,34 @@ if __name__ == '__main__':
     print('')
 
     if os.path.exists(os.path.dirname(os.path.realpath(__file__)) + r'\\ffmpeg.exe'):
+        os.system('cls')
         if args.bvid:
             main(args.bvid, args.thread, download_path, args.output, args.name, headers, None)
-        if args.epid:
-            eps = ep(headers, args.epid)
+        if args.ssid:
+            dir_name = input("为该批量下载的文件夹取个名字吧~ (不要有空格哦)： ")
+            ep_download_path = os.path.join(download_path, dir_name)
+            os.mkdir(ep_download_path)
+            print(ep_download_path)
+            print('Getting episodes information...')
+            eps = get_ep_list(headers, args.ssid)
             choice = None
             if args.start and args.final:
                 print('Downloading episodes from {} to {}'.format(args.start, args.final))
                 for i in range(args.start - 1, args.final):
-                    print('=================================================')
-                    choice = main(eps[i]['bvid'], args.thread, download_path, args.output, eps[i]['share_copy'],
-                                  headers, choice)
                     print('')
+                    choice = main(eps[i]['bvid'], args.thread, ep_download_path, args.output, eps[i]['title'],
+                                  headers, choice)
+                    time.sleep(0.5)
             else:
                 index = 0
                 choice = None
                 for i in eps:
                     index += 1
-                    print('=================================================')
-                    print('Video index: {}'.format(str(index)))
-                    choice = main(i['bvid'], args.thread, download_path, args.output, i['share_copy'], headers, choice)
                     print('')
+                    print('Video index: {}'.format(str(index)))
+                    choice = main(i['bvid'], args.thread, ep_download_path, args.output, i['title'], headers, choice)
+                    time.sleep(0.5)
+                    os.system('cls')
     else:
         print("Can't find ffmpeg.exe. Please put ffmpeg.exe in your working directory.")
         sys.exit(1)
