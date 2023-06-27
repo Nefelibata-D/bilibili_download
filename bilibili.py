@@ -66,12 +66,16 @@ def set_config(cookies, path):
 
 # noinspection PyShadowingNames
 # 由bvid获取cid，B站api中常用cid
-def bvid_to_cid(bvid: str, headers: dict):
+def bvid_get_part(bvid: str, headers: dict):
     url = 'https://api.bilibili.com/x/player/pagelist?bvid={}'.format(bvid)
     res = requests.get(url=url, headers=headers)
-    cid = res.json()['data'][0]['cid']
+    part_list = []
+    for i in res.json()['data']:
+        cid = i['cid']
+        part = i['part']
+        part_list.append((cid, part))
 
-    return cid
+    return part_list
 
 
 # noinspection PyShadowingNames
@@ -109,7 +113,7 @@ def dolby(cid: int, headers: dict):
 
 
 # noinspection PyShadowingNames,PyUnusedLocal
-def detail(bvid: str, cid: int, headers: dict, choice):
+def detail(bvid: str, cid: int, headers: dict, choice, type: int, ep):
     #  fourk为4k请求参数, fnval=4048为8k请求参数
     #  |"超高清 8K", 127         |"超清 4K", 120       |"杜比视界", 126
     #  |"高清 1080P60", 116      |"高清 1080P+", 112
@@ -121,7 +125,10 @@ def detail(bvid: str, cid: int, headers: dict, choice):
 
     all_inf = []  # 所有视频/音频信息列表
 
-    url = 'https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&fourk=1&fnval=4048'.format(bvid, cid)
+    if type == 0:
+        url = 'https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&fourk=1&fnval=4048'.format(bvid, cid)
+    else:
+        url = 'https://api.bilibili.com/pugv/player/web/playurl?fnval=16&fourk=1&ep_id={}'.format(ep)
     res = requests.get(url=url, headers=headers)
 
     if choice is None:  # 在番剧批量下载中，用于保持用户最初选择
@@ -167,7 +174,7 @@ def detail(bvid: str, cid: int, headers: dict, choice):
         os.system('cls')
         print('')
         print('============================================================')
-        print('Audio Quailty: ')
+        print('Audio Quality: ')
         print('')
         times = 0
 
@@ -181,7 +188,7 @@ def detail(bvid: str, cid: int, headers: dict, choice):
             times += 1
 
         for i in res.json()['data']['dash']['audio']:
-            base_url = i['baseUrl']
+            base_url = i['base_url']
             codecs = i['codecs']
             size = round(
                 int(requests.get(base_url, headers=headers, stream=True).headers['Content-Length']) / 1024 / 1024)
@@ -207,7 +214,7 @@ def detail(bvid: str, cid: int, headers: dict, choice):
             video = None
 
         try:
-            audio = res.json()['data']['dash']['audio'][int(choice[1])]['baseUrl']
+            audio = res.json()['data']['dash']['audio'][int(choice[1])]['base_url']
         except IndexError:
             audio = None
 
@@ -315,8 +322,29 @@ def get_ep_list(headers, session_id):
     return ep_list
 
 
+# noinspection PyShadowingNames
+def get_class_list(headers, ep_id):
+    res = requests.get('https://api.bilibili.com/pugv/view/web/season?ep_id={}'.format(ep_id), headers=headers)
+    all_class = res.json()['data']['episodes']
+    class_list = []
+
+    for i in all_class:
+        aid = i['aid']
+        cid = i['cid']
+        bvid = get_ep_bvid(aid, cid, headers)
+        title = i['title']
+        id = i['id']
+        class_list.append({
+            'bvid': bvid,
+            'title': title,
+            'epid': id
+        })
+
+    return class_list
+
+
 # noinspection PyShadowingBuiltins,PyShadowingNames
-def main(bvid: str, thread: int, download_path: str, output: int, name: str, headers: dict, choice):
+def main(bvid: str, thread: int, download_path: str, output: int, name: str, headers: dict, choice, type: int, ep=None):
     if os.path.exists(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__)))):
         print('Find config.json')
         with open(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__))), 'r') as file:
@@ -338,55 +366,84 @@ def main(bvid: str, thread: int, download_path: str, output: int, name: str, hea
     if os.path.exists('{}\\output.mp4'.format(download_path)):
         os.remove(r'{}\output.mp4'.format(download_path))
 
-    # mid = cookies.split(';')[0].split('=')[1]
-    cid = bvid_to_cid(bvid, headers)
-    aid, file_name = get_aid(bvid, cid, headers, name)
-    # ttl = heartbeat(aid, mid, cid, headers)
+    final_list = []  # 最终所有待下载视频列表
 
-    tuple = detail(bvid, cid, headers, choice)
-    print('')
-    print("File name: " + file_name)
-    print('')
+    part_list = bvid_get_part(bvid, headers)
 
-    if tuple[0]:
-        with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
-                      TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
-            res = requests.get(url=tuple[0], headers=headers, stream=True)
-            size = res.headers['Content-Length']
-            task = progress.add_task('Downloading_Video...', total=int(size))
-            download_threader = Download_threader(tuple[0], headers['Cookie'], int(size), thread, progress, task,
-                                                  'video', download_path)
-            download_threader.download_thread()
-            os.rename('{}\\video.m4s'.format(download_path), '{}\\video.mp4'.format(download_path, file_name))
-    if tuple[1]:
-        with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
-                      TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
-            res = requests.get(url=tuple[1], headers=headers, stream=True)
-            size = res.headers['Content-Length']
-            task = progress.add_task('Downloading_Audio...', total=int(size))
-            download_threader = Download_threader(tuple[1], headers['Cookie'], int(size), thread, progress, task,
-                                                  'audio', download_path)
-            download_threader.download_thread()
-            os.rename('{}\\audio.m4s'.format(download_path), '{}\\audio.mp3'.format(download_path, file_name))
-    if None not in tuple:
-        print('Combining...')
-        if output:
-            os.system(r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 ".format(
-                os.path.dirname(os.path.realpath(__file__)), download_path))
+    if len(part_list) == 1:
+        cid = part_list[0][0]
+        if name:
+            file_name = name
         else:
-            os.system(
-                r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 -loglevel quiet".format(
-                    os.path.dirname(os.path.realpath(__file__)), download_path))
-        os.remove(r'{}\\video.mp4'.format(download_path))
-        os.remove(r'{}\\audio.mp3'.format(download_path))
-        os.rename('{}\\output.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, file_name))
-    elif tuple[0]:
-        os.rename('{}\\video.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, file_name))
+            file_name = part_list[0][1]
+        final_list.append((cid, file_name))
     else:
-        os.rename('{}\\audio.mp3'.format(download_path), '{}\\{}.mp3'.format(download_path, file_name))
-    print('Done')
+        os.system('cls')
+        print('该视频有多个分集, 请选择想要下载的内容, 若为空, 则全部下载')
+        print('============================================================')
+        print('')
+        times = 0
+        for i in part_list:
+            print('[{:0>2}]  {}'.format(times, i[1]))
+            times += 1
+        print('')
+        print('============================================================')
+        part_no = input('请输入名称前的数字: ')
+        if part_no:
+            part_no = int(part_no)
+            final_list.append((part_list[part_no][0], part_list[part_no][1]))
+        else:
+            final_list = part_list
 
-    return tuple[2]
+    for i in final_list:
+        tuple = detail(bvid, i[0], headers, choice, type, ep)
+        choice = tuple[2]
+        file_name = i[1]
+        print('')
+        print("File name: " + file_name)
+        print('')
+
+        if tuple[0]:
+            with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
+                          TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
+                res = requests.get(url=tuple[0], headers=headers, stream=True)
+                size = res.headers['Content-Length']
+                task = progress.add_task('Downloading_Video...', total=int(size))
+                download_threader = Download_threader(tuple[0], headers['Cookie'], int(size), thread, progress, task,
+                                                      'video', download_path)
+                download_threader.download_thread()
+                os.rename('{}\\video.m4s'.format(download_path), '{}\\video.mp4'.format(download_path, file_name))
+        if tuple[1]:
+            with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
+                          TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
+                res = requests.get(url=tuple[1], headers=headers, stream=True)
+                size = res.headers['Content-Length']
+                task = progress.add_task('Downloading_Audio...', total=int(size))
+                download_threader = Download_threader(tuple[1], headers['Cookie'], int(size), thread, progress, task,
+                                                      'audio', download_path)
+                download_threader.download_thread()
+                os.rename('{}\\audio.m4s'.format(download_path), '{}\\audio.mp3'.format(download_path, file_name))
+        if None not in tuple:
+            print('Combining...')
+            if output:
+                os.system(r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 ".format(
+                    os.path.dirname(os.path.realpath(__file__)), download_path))
+            else:
+                os.system(
+                    r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 -loglevel quiet".format(
+                        os.path.dirname(os.path.realpath(__file__)), download_path))
+            os.remove(r'{}\\video.mp4'.format(download_path))
+            os.remove(r'{}\\audio.mp3'.format(download_path))
+            os.rename('{}\\output.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, file_name))
+        elif tuple[0]:
+            os.rename('{}\\video.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, file_name))
+        else:
+            os.rename('{}\\audio.mp3'.format(download_path), '{}\\{}.mp3'.format(download_path, file_name))
+        print('Done')
+
+        choice = tuple[2]
+
+    return choice
 
 
 # cmd 输入参数
@@ -394,12 +451,11 @@ parser = argparse.ArgumentParser(description='bilibili download ')
 parser.add_argument('-b', '--bvid', type=str, help="指定视频BV号")
 parser.add_argument('-t', '--thread', type=int, default=8, choices=[2, 4, 8, 16, 32], help='下载线程数, 默认为8')
 parser.add_argument('-n', '--name', type=str, default='', help='对下载视频重新命名')
-parser.add_argument('-ss', '--ssid', type=int, help='指定番剧ss号')
+parser.add_argument('-s', '--ssid', type=int, help='指定番剧ss号')
+parser.add_argument('-e', '--epid', type=int, help='指定该课程任意ep号')
 parser.add_argument('-l', '--login', action='store_true', default=False, help='扫二维码登录')
 # parser.add_argument('-c', '--cookie', action='store_true', default=False, help='手动输入cookies登录')
 parser.add_argument('-o', '--output', action='store_true', default=False, help='保留ffmpeg输出')
-parser.add_argument('-s', '--start', type=int, default=None, help='番剧批量下载开始集数')
-parser.add_argument('-f', '--final', type=int, default=None, help='番剧批量下载结束集数')
 
 args = parser.parse_args()
 
@@ -423,8 +479,8 @@ if __name__ == '__main__':
                 print('================================================================')
                 cookies += i + ';'
     '''
-    if args.bvid is None and args.ssid is None:
-        print('Please enter BVID or EPID')
+    if args.bvid is None and args.ssid is None and args.epid is None:
+        print('Please enter BVID or SESSION_ID or EPID')
         print("Use 'python bilibili.py -h' to show helps.")
         sys.exit(1)
 
@@ -440,22 +496,60 @@ if __name__ == '__main__':
     if os.path.exists(os.path.dirname(os.path.realpath(__file__)) + r'\\ffmpeg.exe'):
         os.system('cls')
         if args.bvid:
-            main(args.bvid, args.thread, download_path, args.output, args.name, headers, None)
-        if args.ssid:
+            main(args.bvid, args.thread, download_path, args.output, args.name, headers, None, 0)
+        if args.ssid or args.epid:
             dir_name = input("为该批量下载的文件夹取个名字吧~ (不要有空格哦)： ")
-            ep_download_path = os.path.join(download_path, dir_name)
-            os.mkdir(ep_download_path)
-            print(ep_download_path)
+            new_download_path = os.path.join(download_path, dir_name)
+            try:
+                os.mkdir(new_download_path)
+            except FileExistsError:
+                pass
+
             print('Getting episodes information...')
-            eps = get_ep_list(headers, args.ssid)
+            print('')
+            print('============================================================')
+            # 输出批量下载所有视频内容
+            if args.ssid:
+                eps = get_ep_list(headers, args.ssid)
+            else:
+                eps = get_class_list(headers, args.epid)
+            times = 0
+            for i in eps:
+                print('[{:0>2}]   {}'.format(times, i['title']))
+                times += 1
+            print('')
+            print('============================================================')
+            video_choice = input('请选择要下载的视频, 例如：1,3,5-12, 若不输入, 默认全部下载~(英文逗号, 不要空格!!!):  ')
+
+            if video_choice:
+                video_index = []
+                v1 = video_choice.split(',')
+                for i in v1:
+                    if '-' in i:
+                        for j in range(int(i.split('-')[0]), int(i.split('-')[1]) + 1):
+                            video_index.append(j)
+                    else:
+                        video_index.append(int(i))
+            else:
+                video_index = None
+            try:
+                video_index = list(set(video_index))  # 去除列表中重复元素
+            except TypeError:
+                pass
+
             choice = None
-            if args.start and args.final:
-                print('Downloading episodes from {} to {}'.format(args.start, args.final))
-                for i in range(args.start - 1, args.final):
+            if video_index:
+                for i in video_index:
                     print('')
-                    choice = main(eps[i]['bvid'], args.thread, ep_download_path, args.output, eps[i]['title'],
-                                  headers, choice)
+                    print('Video index: {}'.format(i))
+                    if args.ssid:
+                        choice = main(eps[i]['bvid'], args.thread, new_download_path, args.output, eps[i]['title'],
+                                      headers, choice, 0)
+                    else:
+                        choice = main(eps[i]['bvid'], args.thread, new_download_path, args.output, eps[i]['title'],
+                                      headers, choice, 1, eps[i]['epid'])
                     time.sleep(0.5)
+                    os.system('cls')
             else:
                 index = 0
                 choice = None
@@ -463,7 +557,11 @@ if __name__ == '__main__':
                     index += 1
                     print('')
                     print('Video index: {}'.format(str(index)))
-                    choice = main(i['bvid'], args.thread, ep_download_path, args.output, i['title'], headers, choice)
+                    if args.ssid:
+                        choice = main(i['bvid'], args.thread, new_download_path, args.output, i['title'], headers, choice, 0)
+                    else:
+                        choice = main(i['bvid'], args.thread, new_download_path, args.output, i['title'],
+                                      headers, choice, 1, i['epid'])
                     time.sleep(0.5)
                     os.system('cls')
     else:
