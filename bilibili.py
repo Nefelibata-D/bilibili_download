@@ -251,7 +251,7 @@ def get_ep_list(headers, session_id) -> list:
 
 
 # noinspection PyShadowingNames
-def get_class_list(headers, ep_id) -> list:
+def get_lesson_list(headers, ep_id) -> list:
     res = requests.get('https://api.bilibili.com/pugv/view/web/season?ep_id={}'.format(ep_id), headers=headers)
     all_class = res.json()['data']['episodes']
     class_list = []
@@ -272,7 +272,7 @@ def get_class_list(headers, ep_id) -> list:
 
 
 # noinspection PyShadowingNames
-def breakpoint_progress(url, headers, already_download, new_range, file_name, directory, download_path):
+def breakpoint_progress(url, headers, already_download, new_range, file_name, directory, download_path) -> None:
     with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
                   TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
         res = requests.get(url=url, headers=headers, stream=True)
@@ -289,7 +289,7 @@ def breakpoint_progress(url, headers, already_download, new_range, file_name, di
 
 
 # noinspection PyShadowingNames
-def progress(url, headers, thread, file_name, download_path):
+def progress(url, headers, thread, file_name, download_path) -> None:
     with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
                   TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
         res = requests.get(url, headers=headers, stream=True)
@@ -307,26 +307,13 @@ def progress(url, headers, thread, file_name, download_path):
 # noinspection PyShadowingBuiltins,PyShadowingNames
 def main_download(bvid: str, thread: int, download_path: str, output: int, name: str, headers: dict, choice, type: int,
                   download_log: dict, ep=None) -> list:
-    if os.path.exists(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__)))):
-        print('Find config.json')
-        with open(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__))), 'r') as file:
-            file = json.loads(file.read())
-            cookies = file['cookies']
-            print('Last login time:  {}'.format(file['timestamp']))
-        headers['Cookie'] = cookies
-    else:
-        print('Please scan QR Code to login. You will have 60 seconds to login.')
-        cookies = login(headers)
-        if cookies:
-            set_config(cookies, os.path.dirname(os.path.realpath(__file__)))
-            headers['Cookie'] = cookies
-            print('Login successful. Login cookies is saved to config.json.')
-        else:
-            print('Login failed. Please try again later.')
-            sys.exit(1)
-
     if os.path.exists('{}\\output.mp4'.format(download_path)):
-        os.remove(r'{}\output.mp4'.format(download_path))
+        print('[Warning]: Finding output.mp4 in the download directory.')
+        a = input('           Please input name to rename it or press enter to delete it: ')
+        if a == '':
+            os.remove(r'{}\output.mp4'.format(download_path))
+        else:
+            os.rename('{}\\output.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, a))
 
     final_list = []  # 最终所有待下载视频列表
 
@@ -366,6 +353,7 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
         print('')
         download_log['name'] = i[1]
         download_log['download_url'] = (tuple[0], tuple[1])
+        download_log['choice'] = tuple[2]
 
         if tuple[0]:
             download_log['file_type'] = 'video'
@@ -381,13 +369,12 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
             progress(tuple[1], headers, thread, 'audio', download_path)
         if None not in tuple:
             print('Combining...')
-            print('True')
             if output:
-                os.system(r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 ".format(
+                os.system(r'{0}\\ffmpeg.exe -i "{1}\\video.mp4" -i "{1}\\audio.mp3" -c copy "{1}\\output.mp4" '.format(
                     os.path.dirname(os.path.realpath(__file__)), download_path))
             else:
                 os.system(
-                    r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 ".format(
+                    r'{0}\\ffmpeg.exe -i "{1}\\video.mp4" -i "{1}\\audio.mp3" -c copy "{1}\\output.mp4" -loglevel quiet'.format(
                         os.path.dirname(os.path.realpath(__file__)), download_path))
             os.remove(r'{}\\video.mp4'.format(download_path))
             os.remove(r'{}\\audio.mp3'.format(download_path))
@@ -407,8 +394,7 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
 def breakpoint_download(headers, path):
     with open(path + r'\download_log', 'r', encoding='utf-8') as file:
         inf = json.loads(file.read())
-        directory = inf['dir']
-        bvid = inf['bvid']
+        download_path = inf['dir']
         urls = inf['download_url']
         name = inf['name']
         file_type = inf['file_type']
@@ -422,7 +408,7 @@ def breakpoint_download(headers, path):
         new_range = []
         try:
             for i in json.loads(file.read()):
-                already_size = os.path.getsize(os.path.join(directory, 'part{}.tmp'.format(times)))
+                already_size = os.path.getsize(os.path.join(download_path, 'part{}.tmp'.format(times)))
                 Range = i['range'].split('=')[1]
                 start = Range.split('-')[0]
                 final = Range.split('-')[1]
@@ -435,19 +421,19 @@ def breakpoint_download(headers, path):
 
     if None not in urls:
         if file_type == 'video':
-            breakpoint_progress(urls[0], headers, already_download, new_range, 'video', directory,
+            breakpoint_progress(urls[0], headers, already_download, new_range, 'video', download_path,
                                 download_path)
             progress(urls[1], headers, args.thread, 'audio', download_path)
         if file_type == 'audio':
-            breakpoint_progress(urls[1], headers, already_download, new_range, 'audio', directory,
+            breakpoint_progress(urls[1], headers, already_download, new_range, 'audio', download_path,
                                 download_path)
         print('Combining...')
         if args.output:
-            os.system(r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 ".format(
+            os.system(r'{0}\\ffmpeg.exe -i "{1}\\video.mp4" -i "{1}\\audio.mp3" -c copy "{1}\\output.mp4" '.format(
                 os.path.dirname(os.path.realpath(__file__)), download_path))
         else:
             os.system(
-                r"{0}\\ffmpeg.exe -i {1}\\video.mp4 -i {1}\\audio.mp3 -c copy {1}\\output.mp4 -loglevel quiet".format(
+                r'{0}\\ffmpeg.exe -i "{1}\\video.mp4" -i "{1}\\audio.mp3" -c copy "{1}\\output.mp4" -loglevel quiet'.format(
                     os.path.dirname(os.path.realpath(__file__)), download_path))
         os.remove(r'{}\\video.mp4'.format(download_path))
         os.remove(r'{}\\audio.mp3'.format(download_path))
@@ -455,14 +441,16 @@ def breakpoint_download(headers, path):
         print('Done')
     else:
         if file_type == 'video':
-            breakpoint_progress(urls[0], headers, already_download, new_range, file_type, directory,
+            breakpoint_progress(urls[0], headers, already_download, new_range, file_type, download_path,
                                 download_path)
             os.rename('{}\\video.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, name))
         else:
-            breakpoint_progress(urls[1], headers, already_download, new_range, file_type, directory,
+            breakpoint_progress(urls[1], headers, already_download, new_range, file_type, download_path,
                                 download_path)
             os.rename('{}\\audio.mp3'.format(download_path), '{}\\{}.mp3'.format(download_path, name))
-        print('Done')
+    print('Done')
+
+    return inf['choice'], download_path
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames,PyShadowingBuiltins,PyPep8Naming
@@ -591,7 +579,6 @@ parser.add_argument('-n', '--name', type=str, default='', help='对下载视频�
 parser.add_argument('-s', '--ssid', type=int, help='指定番剧ss号')
 parser.add_argument('-e', '--epid', type=int, help='指定该课程任意ep号')
 parser.add_argument('-l', '--login', action='store_true', default=False, help='扫描二维码登录')
-# parser.add_argument('-c', '--cookie', action='store_true', default=False, help='手动输入cookies登录')
 parser.add_argument('-o', '--output', action='store_true', default=False, help='保留ffmpeg输出')
 parser.add_argument('-k', '--keep', action='store_true', default=False, help='断点续传, 完成之前未完成任务')
 
@@ -604,16 +591,51 @@ if __name__ == '__main__':
         'Referer': 'https://www.bilibili.com/'
     }
     path = os.path.dirname(os.path.realpath(__file__))
-    if args.login:
+    if args.login or os.path.exists(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__)))) is False:
         print('Please scan QR Code to login. You will have 60 seconds to login.')
         cookies = login(headers)
         if cookies:
             set_config(cookies, path)
             print('Login successful. Login cookies is saved to config.json.')
+        if args.login:
             sys.exit(0)
         else:
             print('Login failed. Please try again later.')
-            sys.exit(0)
+            sys.exit(-1)
+
+    os.system('cls')
+    print('')
+    print('Find config.json')
+    with open(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__))), 'r') as file:
+        file = json.loads(file.read())
+        cookies = file['cookies']
+        print('')
+        print('Last login time:  {}'.format(file['timestamp']))
+    headers['Cookie'] = cookies
+    time.sleep(1)
+
+    if os.path.exists(path + r'\download_list') or os.path.exists(path + r'\download_log'):
+        if args.keep is False:
+            print('')
+            print('[Warning] Finding last download files')
+            print("          If you want to continue last downloading, please use Ctrl + c to exit  ")
+            print("          and then use ' python bilibili.py -k ' to continue.")
+            a = input("          If you press enter, the last download files will be removed.")
+            if a == '':
+                try:
+                    with open(path + r'\download_log') as file:
+                        to_delete_path = json.loads(file.read())['dir']
+                    os.remove(path + r'\download_log')
+                    os.remove(path + r'\download_file_log')
+                    try:
+                        for i in range(32):
+                            os.remove(to_delete_path + r'\part{}.tmp'.format(i))
+                    except FileNotFoundError:
+                        pass
+                    os.remove(path + r'\download_list')
+                except FileNotFoundError:
+                    pass
+
     if args.bvid is None and args.ssid is None and args.epid is None and args.keep is False:
         print('Please enter BVID or SESSION_ID or EPID')
         print("Use 'python bilibili.py -h' to show helps.")
@@ -628,16 +650,77 @@ if __name__ == '__main__':
     if os.path.exists(path + r'\\ffmpeg.exe'):
         os.system('cls')
         if args.keep:
-            print('')
-            print('Continue Downloading...')
-            with open(r'{}\config.json'.format(os.path.dirname(os.path.realpath(__file__))), 'r') as file:
-                file = json.loads(file.read())
-                cookies = file['cookies']
-            headers['Cookie'] = cookies
-            breakpoint_download(headers, path)
+            if os.path.exists(path + r'\download_list'):
+                with open(path + r'\download_list', 'r') as file:
+                    download_list = json.loads(file.read())
+                download_continue = True
+                choice = []
+                type = 0
+                ep = None
+                directory = ''
+                download_log = {
+                    'bvid': None,
+                    'dir': None,
+                    'download_url': None,
+                    'file_type': None,
+                    'name': None,
+                    'choice': None
+                }
+                if os.path.exists(path + r'\download_file_log') is False:
+                    download_continue = False
+                for i in range(len(download_list)):
+                    if download_continue:
+                        print('Continue Downloading...')
+                        print('')
+                        choice, directory = breakpoint_download(headers, path)
+                        download_continue = False
+                        download_list.pop(0)
+                        with open(path + r'\download_list', 'w') as file:
+                            file.truncate(0)
+                            file.write(json.dumps(download_list))
+                        os.remove(path + r'\download_file_log')
+                        os.remove(path + r'\download_log')
+                        os.system('cls')
+                    else:
+                        print('Continue Downloading...')
+                        print('')
+                        if 'epid' in download_list[0].keys():
+                            type = 1
+                            ep = download_list[0]['epid']
+                        to_download = download_list[0]
+                        download_log['dir'] = directory
+                        download_log['bvid'] = to_download['bvid']
+                        download_log['name'] = to_download['title']
+                        download_log['choice'] = choice
+                        main_download(to_download['bvid'], args.thread, directory, args.output, to_download['title'],
+                                      headers, choice, type, download_log, ep)
+                        download_list.pop(0)
+                        os.remove(path + r'\download_file_log')
+                        os.remove(path + r'\download_log')
+                        with open(path + r'\download_list', 'w') as file:
+                            file.truncate(0)
+                            file.write(json.dumps(download_list))
+                        os.system('cls')
+                os.remove(path + r'\download_list')
+                print('')
+                print('Download completely')
+                print('Download Directory : ' + download_path)
+                print('')
 
-            os.remove(os.path.join(path, 'download_file_log'))
-            os.remove(os.path.join(path, 'download_log'))
+            else:
+                print('')
+                print('Continue Downloading...')
+                breakpoint_download(headers, path)
+
+                os.remove(os.path.join(path, 'download_file_log'))
+                os.remove(os.path.join(path, 'download_log'))
+                os.system('cls')
+                print('')
+                print('Download completely')
+                print('Download Directory : ' + download_path)
+                print('')
+
+            sys.exit(0)
 
         if args.bvid:
             download_log = {
@@ -648,9 +731,14 @@ if __name__ == '__main__':
                 'name': None
             }
             main_download(args.bvid, args.thread, download_path, args.output, args.name, headers, None, 0, download_log)
+            print('')
+            print('Download completely')
+            print('Download Directory : ' + download_path)
+            print('')
+            sys.exit(0)
 
         if args.ssid or args.epid:
-            dir_name = input("为该批量下载的文件夹取个名字吧~ (不要有空格哦)： ")
+            dir_name = input("Name the download directory (Please don't input spacing)： ")
             new_download_path = os.path.join(download_path, dir_name)
             try:
                 os.mkdir(new_download_path)
@@ -664,14 +752,16 @@ if __name__ == '__main__':
             if args.ssid:
                 eps = get_ep_list(headers, args.ssid)
             else:
-                eps = get_class_list(headers, args.epid)
+                eps = get_lesson_list(headers, args.epid)
             times = 0
             for i in eps:
                 print('[{:0>2}]   {}'.format(times, i['title']))
                 times += 1
             print('')
             print('============================================================')
-            video_choice = input('请选择要下载的视频, 例如：1,3,5-12, 若不输入, 默认全部下载~(英文逗号, 不要空格!!!):  ')
+            print('Choose the video you want to download, example: 1,3,5-12.')
+            print("If don't input, all videos will be downloaded.")
+            video_choice = input('Use English comma. No spacing between the choices:  ')
 
             if video_choice:
                 video_index = []
@@ -693,14 +783,22 @@ if __name__ == '__main__':
                 'bvid': None,
                 'dir': new_download_path,
                 'name': None,
-                'epid': None
+                'epid': None,
+            }
+            download_log = {
+                'bvid': None,
+                'dir': new_download_path,
+                'download_url': None,
+                'file_type': None,
+                'name': None,
+                'choice': None
             }
 
             choice = None
             if video_index:
                 final_list = [eps[i] for i in video_index]
                 with open(os.path.dirname(os.path.realpath(__file__)) + r'\download_list', 'w') as file:
-                    file.write(str(final_list))
+                    file.write(json.dumps(final_list))
 
                 for i in video_index:
                     print('')
@@ -708,18 +806,22 @@ if __name__ == '__main__':
                     if args.ssid:
                         download_inf['bvid'] = eps[i]['bvid']
                         download_inf['name'] = eps[i]['title']
+                        download_log['bvid'] = eps[i]['bvid']
+                        download_log['name'] = eps[i]['title']
                         choice = main_download(eps[i]['bvid'], args.thread, new_download_path, args.output,
                                                eps[i]['title'], headers, choice, 0, download_log)
                     else:
                         download_inf['bvid'] = eps[i]['bvid']
                         download_inf['name'] = eps[i]['title']
                         download_inf['epid'] = eps[i]['epid']
+                        download_log['bvid'] = eps[i]['bvid']
+                        download_log['name'] = eps[i]['title']
                         choice = main_download(eps[i]['bvid'], args.thread, new_download_path, args.output,
                                                eps[i]['title'], headers, choice, 1, download_log, eps[i]['epid'])
                     final_list.pop(0)
                     with open(os.path.dirname(os.path.realpath(__file__)) + r'\download_list', 'w+') as file:
                         file.truncate(0)
-                        file.write(str(final_list))
+                        file.write(json.dumps(final_list))
                     time.sleep(0.5)
                     os.system('cls')
             else:
@@ -727,7 +829,7 @@ if __name__ == '__main__':
                 index = 0
                 choice = None
                 with open(os.path.dirname(os.path.realpath(__file__)) + r'\download_list', 'w') as file:
-                    file.write(str(final_list))
+                    file.write(json.dumps(final_list))
                 for i in eps:
                     index += 1
                     print('')
@@ -735,18 +837,22 @@ if __name__ == '__main__':
                     if args.ssid:
                         download_inf['bvid'] = i['bvid']
                         download_inf['name'] = i['title']
+                        download_log['bvid'] = i['bvid']
+                        download_log['name'] = i['title']
                         choice = main_download(i['bvid'], args.thread, new_download_path, args.output, i['title'],
                                                headers, choice, 0, download_log)
                     else:
                         download_inf['bvid'] = i['bvid']
                         download_inf['name'] = i['title']
                         download_inf['epid'] = i['epid']
+                        download_log['bvid'] = i['bvid']
+                        download_log['name'] = i['title']
                         choice = main_download(i['bvid'], args.thread, new_download_path, args.output, i['title'],
                                                headers, choice, 1, download_log, i['epid'])
                     final_list.pop(0)
                     with open(os.path.dirname(os.path.realpath(__file__)) + r'\download_list', 'w+') as file:
                         file.truncate(0)
-                        file.write(str(final_list))
+                        file.write(json.dumps(final_list))
                     time.sleep(0.5)
                     os.system('cls')
             print('')
