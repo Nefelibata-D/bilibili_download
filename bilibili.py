@@ -277,7 +277,7 @@ def breakpoint_progress(url, headers, already_download, new_range, file_name, di
                   TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
         res = requests.get(url=url, headers=headers, stream=True)
         size = res.headers['Content-Length']
-        task = progress.add_task('Downloading_Audio...', total=int(size))
+        task = progress.add_task('Downloading_{}...'.format(file_name), total=int(size))
         download_threader = Breakpoint_download_threader(url, headers['Cookie'], int(size), already_download,
                                                          len(new_range), progress,
                                                          task, file_name, directory, new_range)
@@ -393,11 +393,11 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
 # noinspection PyShadowingNames,PyPep8Naming
 def breakpoint_download(headers, path):
     with open(path + r'\download_log', 'r', encoding='utf-8') as file:
-        inf = json.loads(file.read())
-        download_path = inf['dir']
-        urls = inf['download_url']
-        name = inf['name']
-        file_type = inf['file_type']
+        download_log = json.loads(file.read())
+        download_path = download_log['dir']
+        urls = download_log['download_url']
+        name = download_log['name']
+        file_type = download_log['file_type']
 
     print('File Name: {}'.format(name))
     print('')
@@ -423,6 +423,10 @@ def breakpoint_download(headers, path):
         if file_type == 'video':
             breakpoint_progress(urls[0], headers, already_download, new_range, 'video', download_path,
                                 download_path)
+            download_log['file_type'] = 'audio'
+            with open(path + r'\download_log', 'w') as file:
+                file.truncate(0)
+                file.write(json.dumps(download_log))
             progress(urls[1], headers, args.thread, 'audio', download_path)
         if file_type == 'audio':
             breakpoint_progress(urls[1], headers, already_download, new_range, 'audio', download_path,
@@ -450,7 +454,7 @@ def breakpoint_download(headers, path):
             os.rename('{}\\audio.mp3'.format(download_path), '{}\\{}.mp3'.format(download_path, name))
     print('Done')
 
-    return inf['choice'], download_path
+    return download_log['choice'], download_path
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames,PyShadowingBuiltins,PyPep8Naming
@@ -490,13 +494,16 @@ class Download_threader:
 
     def copy_tmps(self):
         # 分片视频合并
-        for i in range(self.thread):
-            with open(r'{}\part{}.tmp'.format(self.download_path, i), 'rb') as tmp:
-                content = tmp.read()
-            os.remove(r'{}\part{}.tmp'.format(self.download_path, i))
-            with open(r'{}\{}.m4s'.format(self.download_path, self.file_name), 'ab+') as file:
-                file.write(content)
-                file.flush()
+        for i in range(32):  # 直接按最大可能线程数去寻找, 防止在子类 Breakpoint_download_threader 中报错
+            try:
+                with open(r'{}\part{}.tmp'.format(self.download_path, i), 'rb') as tmp:
+                    content = tmp.read()
+                os.remove(r'{}\part{}.tmp'.format(self.download_path, i))
+                with open(r'{}\{}.m4s'.format(self.download_path, self.file_name), 'ab+') as file:
+                    file.write(content)
+                    file.flush()
+            except FileNotFoundError:
+                pass
 
     def download_thread(self):
         # 多线程下载
@@ -621,18 +628,22 @@ if __name__ == '__main__':
             print("          If you want to continue last downloading, please use Ctrl + c to exit  ")
             print("          and then use ' python bilibili.py -k ' to continue.")
             a = input("          If you press enter, the last download files will be removed.")
-            if a == '':
+            if a == '':  # 清除所有残留下载文件
                 try:
                     with open(path + r'\download_log') as file:
                         to_delete_path = json.loads(file.read())['dir']
                     os.remove(path + r'\download_log')
                     os.remove(path + r'\download_file_log')
-                    try:
-                        for i in range(32):
+                    for i in range(32):  # 遍历, 删除所有可能的tmp文件
+                        try:
                             os.remove(to_delete_path + r'\part{}.tmp'.format(i))
-                    except FileNotFoundError:
-                        pass
+                        except FileNotFoundError:
+                            pass
                     os.remove(path + r'\download_list')
+                    if os.path.exists(to_delete_path + r'\video.mp4'):
+                        os.remove(to_delete_path + r'\video.mp4')
+                    if os.path.exists(to_delete_path + r'\audio.mp4'):
+                        os.remove(to_delete_path + r'\video.mp4')
                 except FileNotFoundError:
                     pass
 
@@ -651,13 +662,6 @@ if __name__ == '__main__':
         os.system('cls')
         if args.keep:
             if os.path.exists(path + r'\download_list'):
-                with open(path + r'\download_list', 'r') as file:
-                    download_list = json.loads(file.read())
-                download_continue = True
-                choice = []
-                type = 0
-                ep = None
-                directory = ''
                 download_log = {
                     'bvid': None,
                     'dir': None,
@@ -666,6 +670,13 @@ if __name__ == '__main__':
                     'name': None,
                     'choice': None
                 }
+                with open(path + r'\download_list', 'r') as file:
+                    download_list = json.loads(file.read())
+                download_continue = True
+                choice = []
+                type = 0
+                ep = None
+                directory = ''
                 if os.path.exists(path + r'\download_file_log') is False:
                     download_continue = False
                 for i in range(len(download_list)):
@@ -711,7 +722,6 @@ if __name__ == '__main__':
                 print('')
                 print('Continue Downloading...')
                 breakpoint_download(headers, path)
-
                 os.remove(os.path.join(path, 'download_file_log'))
                 os.remove(os.path.join(path, 'download_log'))
                 os.system('cls')
@@ -731,6 +741,9 @@ if __name__ == '__main__':
                 'name': None
             }
             main_download(args.bvid, args.thread, download_path, args.output, args.name, headers, None, 0, download_log)
+            os.remove(path + r'\download_file_log')
+            os.remove(path + r'\download_log')
+            os.system('cls')
             print('')
             print('Download completely')
             print('Download Directory : ' + download_path)
@@ -855,6 +868,9 @@ if __name__ == '__main__':
                         file.write(json.dumps(final_list))
                     time.sleep(0.5)
                     os.system('cls')
+            os.remove(path + r'\download_file_log')
+            os.remove(path + r'\download_log')
+            os.remove(path + r'\download_list')
             print('')
             print('Download completely')
             print('Download Directory : ' + download_path)
