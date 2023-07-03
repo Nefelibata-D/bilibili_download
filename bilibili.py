@@ -12,14 +12,10 @@ import sys
 
 # noinspection PyShadowingNames
 def login(headers: dict) -> str | None:
-    """
-    模拟B站二维码登录功能, 获取用户cookies有效内容
-    cookies 有效时间应在 15d-30d
-    """
-
+    # 模拟B站二维码登录功能, 获取用户cookies有效内容
     login_url = 'https://passport.bilibili.com/qrcode/getLoginUrl'  # 获取登录二维码
     res = requests.get(url=login_url, headers=headers)
-    qrcode_url = res.json()['data']['url']  # 登录二维码所含内容
+    qrcode_url = res.json()['data']['url']
     oauth_key = res.json()['data']['oauthKey']
     img = qrcode.make(qrcode_url)
 
@@ -30,7 +26,7 @@ def login(headers: dict) -> str | None:
 
     login_info_url = 'https://passport.bilibili.com/qrcode/getLoginInfo?oauthKey={}'.format(oauth_key)  # 二维码状态获取
     cookies = ''
-    for i in range(60):  # 等待用户登录扫码, 等待时间60s
+    for i in range(60):  # 等待用户登录扫码, 超时自动退出
         res = requests.post(url=login_info_url, headers=headers)
         if res.json()['status']:
             user = res.json()['data']['url']
@@ -47,14 +43,14 @@ def login(headers: dict) -> str | None:
 
 
 # noinspection PyShadowingNames
-def set_config(cookies, path) -> None:
+def set_config(cookies: str, path: str) -> None:
     # 保存用户登录信息
     mid = cookies.split(';')[0].split('=')[1]
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     cof = {
         'mid': mid,  # 用户账号唯一id
-        'cookies': cookies,  # cookies有效值
-        'timestamp': timestamp  # 登录时间，目前cookies过期可能性较低
+        'cookies': cookies,
+        'timestamp': timestamp
     }
 
     with open(r'{}\config.json'.format(path), 'w') as file:
@@ -64,8 +60,8 @@ def set_config(cookies, path) -> None:
 
 
 # noinspection PyShadowingNames
-# 由bvid获取cid，B站api中常用cid
-def bvid_get_part(bvid: str, headers: dict) -> list:
+def bvid_get_part(bvid: str, headers: dict) -> list[tuple[int, str]]:
+    # 由bvid获取cid，同时如果有, 获取视频选集信息
     url = 'https://api.bilibili.com/x/player/pagelist?bvid={}'.format(bvid)
     res = requests.get(url=url, headers=headers)
     part_list = []
@@ -78,8 +74,8 @@ def bvid_get_part(bvid: str, headers: dict) -> list:
 
 
 # noinspection PyShadowingNames
-# 由bvid，cid获取aid
-def get_aid(bvid: str, cid: int, headers: dict, name: str) -> tuple:
+def get_aid(bvid: str, cid: int, headers: dict, name: str) -> tuple[int, str]:
+    # 由bvid，cid获取aid
     url = 'https://api.bilibili.com/x/web-interface/view?cid={}&bvid={}'.format(cid, bvid)
     res = requests.get(url=url, headers=headers)
     aid = res.json()['data']['aid']
@@ -92,7 +88,7 @@ def get_aid(bvid: str, cid: int, headers: dict, name: str) -> tuple:
 
 
 # noinspection PyShadowingNames
-def heartbeat(aid: int, mid: int, cid: int, headers: dict) -> str:
+def heartbeat(aid: int, mid: int, cid: int, headers: dict) -> int:
     #  ttl握手, 目前不起作用, 不知后期是否会作为反爬虫判定
     url = 'https://api.bilibili.com/x/click-interface/web/heartbeat?mid={}&aid={}&cid={}'.format(mid, aid, cid)
     res = requests.post(url=url, headers=headers)
@@ -101,7 +97,57 @@ def heartbeat(aid: int, mid: int, cid: int, headers: dict) -> str:
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames
-def dolby(cid: int, headers: dict) -> tuple:
+def get_ep_bvid(aid: int, cid: int, headers: dict) -> str:
+    res = requests.get("https://api.bilibili.com/x/player/wbi/v2?aid={}&cid={}".format(aid, cid), headers=headers)
+    bvid = res.json()['data']['bvid']
+
+    return bvid
+
+
+# noinspection PyUnboundLocalVariable,PyShadowingNames
+def get_ep_list(headers, session_id) -> list[dict[str, str]]:
+    # 通过session_id获取所有视频的aid、cid
+    res = requests.get('https://api.bilibili.com/pgc/web/season/section?season_id={}'.format(session_id),
+                       headers=headers)
+    ep_json = res.json()['result']['main_section']['episodes']
+    ep_list = []
+
+    for i in ep_json:
+        aid = i['aid']
+        cid = i['cid']
+        bvid = get_ep_bvid(aid, cid, headers)
+        title = i['long_title']
+        ep_list.append({
+            'bvid': bvid,
+            'title': title,
+        })
+
+    return ep_list
+
+
+# noinspection PyShadowingNames
+def get_lesson_list(headers, ep_id) -> list[dict[str, str, int]]:
+    res = requests.get('https://api.bilibili.com/pugv/view/web/season?ep_id={}'.format(ep_id), headers=headers)
+    all_class = res.json()['data']['episodes']
+    class_list = []
+
+    for i in all_class:
+        aid = i['aid']
+        cid = i['cid']
+        bvid = get_ep_bvid(aid, cid, headers)
+        title = i['title']
+        id = i['id']
+        class_list.append({
+            'bvid': bvid,
+            'title': title,
+            'epid': id
+        })
+
+    return class_list
+
+
+# noinspection PyUnboundLocalVariable,PyShadowingNames
+def dolby(cid: int, headers: dict) -> tuple[str, str, int]:
     url = 'https://api.bilibili.com//pgc/player/web/v2/playurl?support_multi_audio=true&cid={}&fnval=4048'.format(cid)
     res = requests.get(url, headers=headers)
     result = res.json()['result']['video_info']['dash']['dolby']['audio'][0]
@@ -113,7 +159,7 @@ def dolby(cid: int, headers: dict) -> tuple:
 
 
 # noinspection PyShadowingNames,PyUnusedLocal
-def detail(bvid: str, cid: int, headers: dict, choice, type: int, ep, keep=None) -> tuple:
+def detail(bvid: str, cid: int, headers: dict, choice: list | None, type: int, ep: int | None, keep=None) -> tuple[str, str, list[int, int]]:
     #  fourk为4k请求参数, fnval=4048为8k请求参数
     #  |"超高清 8K", 127         |"超清 4K", 120       |"杜比视界", 126
     #  |"高清 1080P60", 116      |"高清 1080P+", 112
@@ -221,58 +267,8 @@ def detail(bvid: str, cid: int, headers: dict, choice, type: int, ep, keep=None)
     return video, audio, choice
 
 
-# noinspection PyUnboundLocalVariable,PyShadowingNames
-def get_ep_bvid(aid: int, cid: int, headers: dict) -> str:
-    res = requests.get("https://api.bilibili.com/x/player/wbi/v2?aid={}&cid={}".format(aid, cid), headers=headers)
-    bvid = res.json()['data']['bvid']
-
-    return bvid
-
-
-# noinspection PyUnboundLocalVariable,PyShadowingNames
-def get_ep_list(headers, session_id) -> list:
-    # 通过session_id获取所有视频的aid、cid
-    res = requests.get('https://api.bilibili.com/pgc/web/season/section?season_id={}'.format(session_id),
-                       headers=headers)
-    ep_json = res.json()['result']['main_section']['episodes']
-    ep_list = []
-
-    for i in ep_json:
-        aid = i['aid']
-        cid = i['cid']
-        bvid = get_ep_bvid(aid, cid, headers)
-        title = i['long_title']
-        ep_list.append({
-            'bvid': bvid,
-            'title': title,
-        })
-
-    return ep_list
-
-
 # noinspection PyShadowingNames
-def get_lesson_list(headers, ep_id) -> list:
-    res = requests.get('https://api.bilibili.com/pugv/view/web/season?ep_id={}'.format(ep_id), headers=headers)
-    all_class = res.json()['data']['episodes']
-    class_list = []
-
-    for i in all_class:
-        aid = i['aid']
-        cid = i['cid']
-        bvid = get_ep_bvid(aid, cid, headers)
-        title = i['title']
-        id = i['id']
-        class_list.append({
-            'bvid': bvid,
-            'title': title,
-            'epid': id
-        })
-
-    return class_list
-
-
-# noinspection PyShadowingNames
-def breakpoint_progress(url, headers, already_download, new_range, file_name, directory, download_path) -> None:
+def breakpoint_progress(url: str, headers: dict, already_download: int, new_range: list, file_name: str, download_path: str) -> None:
     with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
                   TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
         res = requests.get(url=url, headers=headers, stream=True)
@@ -280,7 +276,7 @@ def breakpoint_progress(url, headers, already_download, new_range, file_name, di
         task = progress.add_task('Downloading_{}...'.format(file_name), total=int(size))
         download_threader = Breakpoint_download_threader(url, headers['Cookie'], int(size), already_download,
                                                          len(new_range), progress,
-                                                         task, file_name, directory, new_range)
+                                                         task, file_name, download_path, new_range)
         download_threader.download_thread()
         if file_name == 'video':
             os.rename('{}\\{}.m4s'.format(download_path, file_name), '{}\\{}.mp4'.format(download_path, file_name))
@@ -289,7 +285,7 @@ def breakpoint_progress(url, headers, already_download, new_range, file_name, di
 
 
 # noinspection PyShadowingNames
-def progress(url, headers, thread, file_name, download_path) -> None:
+def progress(url: str, headers: dict, thread: int, file_name: str, download_path: str) -> None:
     with Progress(TextColumn('{task.description}'), DownloadColumn(binary_units=True), BarColumn(),
                   TransferSpeedColumn(), '·', TimeRemainingColumn(), '·', TimeElapsedColumn()) as progress:
         res = requests.get(url, headers=headers, stream=True)
@@ -304,9 +300,21 @@ def progress(url, headers, thread, file_name, download_path) -> None:
             os.rename('{}\\{}.m4s'.format(download_path, file_name), '{}\\{}.mp3'.format(download_path, file_name))
 
 
-# noinspection PyShadowingBuiltins,PyShadowingNames
+# noinspection PyShadowingNames
+def rename_protect(download_path: str, new_name: str, old_name: str):
+    while True:
+        try:
+            os.rename('{}\\{}'.format(download_path, old_name), '{}\\{}'.format(download_path, new_name))
+            break
+        except OSError:
+            print('')
+            new_name = input("[Error] We can rename your file, please input a new name (No special character):  ")
+            os.rename('{}\\{}'.format(download_path, old_name), '{}\\{}'.format(download_path, new_name))
+
+
+# noinspection PyShadowingNames,PyShadowingBuiltins
 def main_download(bvid: str, thread: int, download_path: str, output: int, name: str, headers: dict, choice, type: int,
-                  download_log: dict, ep=None) -> list:
+                  download_log: dict, ep=None) -> list[int, int]:
     if os.path.exists('{}\\output.mp4'.format(download_path)):
         print('[Warning]: Finding output.mp4 in the download directory.')
         a = input('           Please input name to rename it or press enter to delete it: ')
@@ -328,7 +336,8 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
         final_list.append((cid, file_name))
     else:
         os.system('cls')
-        print('该视频有多个分集, 请选择想要下载的内容, 若为空, 则全部下载')
+        print('The bvid corresponds to many videos, please choose the video you want to download.')
+        print('If you press enter directly, all videos will be downloaded')
         print('============================================================')
         print('')
         times = 0
@@ -337,10 +346,22 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
             times += 1
         print('')
         print('============================================================')
-        part_no = input('请输入名称前的数字: ')
+        print('The videos will be download to a new directory, please name it')
+        a = input('If you press enter directly, we will use the default directory:  ')
+        if a != '':  # 允许用户创建文件夹下载
+            download_path = download_path + r'\{}'.format(a)
+            try:
+                os.mkdir(download_path)
+            except FileExistsError:
+                pass
+        part_no = input("Input the number before the video's name:  ")
         if part_no:
-            part_no = int(part_no)
-            final_list.append((part_list[part_no][0], part_list[part_no][1]))
+            for i in part_no.split(','):
+                if '-' in i:
+                    for j in range(int(i.split('-')[0]), int(i.split('-')[1]) + 1):
+                        final_list.append((part_list[j][0], part_list[j][1]))
+                else:
+                    final_list.append((part_list[int(i)][0], part_list[int(i)][1]))
         else:
             final_list = part_list
 
@@ -368,7 +389,7 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
                 file.write(json.dumps(download_log))
             progress(tuple[1], headers, thread, 'audio', download_path)
         if None not in tuple:
-            print('Combining...')
+            print("Combining... (Please don't close the program)")
             if output:
                 os.system(r'{0}\\ffmpeg.exe -i "{1}\\video.mp4" -i "{1}\\audio.mp3" -c copy "{1}\\output.mp4" '.format(
                     os.path.dirname(os.path.realpath(__file__)), download_path))
@@ -378,12 +399,13 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
                         os.path.dirname(os.path.realpath(__file__)), download_path))
             os.remove(r'{}\\video.mp4'.format(download_path))
             os.remove(r'{}\\audio.mp3'.format(download_path))
-            os.rename('{}\\output.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, file_name))
+            rename_protect(download_path, file_name + '.mp4', 'output.mp4')
         elif tuple[0]:
-            os.rename('{}\\video.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, file_name))
+            rename_protect(download_path, file_name + '.mp4', 'video.mp4')
         else:
-            os.rename('{}\\audio.mp3'.format(download_path), '{}\\{}.mp3'.format(download_path, file_name))
+            rename_protect(download_path, file_name + '.mp3', 'audio.mp3')
         print('Done')
+        os.system('cls')
 
         choice = tuple[2]
 
@@ -391,7 +413,7 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
 
 
 # noinspection PyShadowingNames,PyPep8Naming
-def breakpoint_download(headers, path):
+def breakpoint_download(headers: dict, path: str) -> tuple[list[int, int], str]:
     with open(path + r'\download_log', 'r', encoding='utf-8') as file:
         download_log = json.loads(file.read())
         download_path = download_log['dir']
@@ -421,17 +443,15 @@ def breakpoint_download(headers, path):
 
     if None not in urls:
         if file_type == 'video':
-            breakpoint_progress(urls[0], headers, already_download, new_range, 'video', download_path,
-                                download_path)
+            breakpoint_progress(urls[0], headers, already_download, new_range, 'video', download_path)
             download_log['file_type'] = 'audio'
             with open(path + r'\download_log', 'w') as file:
                 file.truncate(0)
                 file.write(json.dumps(download_log))
             progress(urls[1], headers, args.thread, 'audio', download_path)
         if file_type == 'audio':
-            breakpoint_progress(urls[1], headers, already_download, new_range, 'audio', download_path,
-                                download_path)
-        print('Combining...')
+            breakpoint_progress(urls[1], headers, already_download, new_range, 'audio', download_path)
+        print("Combining... (Please don't close the program)")
         if args.output:
             os.system(r'{0}\\ffmpeg.exe -i "{1}\\video.mp4" -i "{1}\\audio.mp3" -c copy "{1}\\output.mp4" '.format(
                 os.path.dirname(os.path.realpath(__file__)), download_path))
@@ -441,17 +461,15 @@ def breakpoint_download(headers, path):
                     os.path.dirname(os.path.realpath(__file__)), download_path))
         os.remove(r'{}\\video.mp4'.format(download_path))
         os.remove(r'{}\\audio.mp3'.format(download_path))
-        os.rename('{}\\output.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, name))
+        rename_protect(download_path, name + '.mp4', 'output.mp4')
         print('Done')
     else:
         if file_type == 'video':
-            breakpoint_progress(urls[0], headers, already_download, new_range, file_type, download_path,
-                                download_path)
-            os.rename('{}\\video.mp4'.format(download_path), '{}\\{}.mp4'.format(download_path, name))
+            breakpoint_progress(urls[0], headers, already_download, new_range, file_type, download_path)
+            rename_protect(download_path, name + '.mp4', 'video.mp4')
         else:
-            breakpoint_progress(urls[1], headers, already_download, new_range, file_type, download_path,
-                                download_path)
-            os.rename('{}\\audio.mp3'.format(download_path), '{}\\{}.mp3'.format(download_path, name))
+            breakpoint_progress(urls[1], headers, already_download, new_range, file_type, download_path)
+            rename_protect(download_path, name + '.mp3', 'audio.mp3')
     print('Done')
 
     return download_log['choice'], download_path
@@ -547,7 +565,7 @@ class Download_threader:
 
 # noinspection PyShadowingNames
 class Breakpoint_download_threader(Download_threader):
-    def __init__(self, url: str, cookie: str, size: int, get_size, thread: int, progress, task, file_name: str,
+    def __init__(self, url: str, cookie: str, size: int, get_size: int, thread: int, progress, task, file_name: str,
                  download_path: str, new_ranges: list):
         super().__init__(url, cookie, size, thread, progress, task, file_name,
                          download_path)
@@ -620,7 +638,6 @@ if __name__ == '__main__':
         print('Last login time:  {}'.format(file['timestamp']))
     headers['Cookie'] = cookies
     time.sleep(1)
-
     if os.path.exists(path + r'\download_list') or os.path.exists(path + r'\download_log'):
         if args.keep is False:
             print('')
