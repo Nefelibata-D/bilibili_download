@@ -4,14 +4,13 @@
 
 ## 1. 项目使用的第三方库
 
-* beautifulsoup4
 * requests
 * qrcode
 * rich
 
 安装项目所需第三方库：
 
-    pip install -r requirements.txt
+    pip install requests, qrcode, rich
 
 ## 2. 使用说明
 
@@ -19,60 +18,30 @@
 
     -h, --help     查看帮助信息
     -b, --bvid     视频BV号
-    -e, --epid     番剧EP号
-    -q, --qn       视频质量(required), 支持参数为[16, 32, 64, 80, 112, 116, 120, 127]
     -n, --name     视频重新命名
     -l, --login    仅登录, 生成config.json文件
     -t, --thread   下载视频线程数, 默认为8线程, 支持线程数为[2, 4, 8, 16, 32]
     -o, --output   允许ffmpeg输出视频合并日志
-    -s, --start    番剧批量下载开始集数
-    -f, --final    番剧批量下载结束集数
-
-### 2.2 视频质量（qn）参数说明
-
-    "超高清 8K", 127         "超清 4K", 120   
-    "高清 1080P60", 116      "高清 1080P+", 112    
-    "高清 1080P", 80         "高清 720P", 64    
-    "清晰 480P", 32          "流畅 360P" 16
+    -s, --ssid     番剧下载提供的ssid
+    -e, --epid     课程下载中任意课程的epid
+    -k, --keep     继续上次意外退出未完成的任务
 
 ### 2.3 使用方法
 
     python bilibili.py [OPTIONS]
     
     examples:
-        python bilibili.py -b BV1E44y1t7Kn -q 120
-        python bilibili.py -b BV1E44y1t7Kn -q 120 -n test -t 16 -o
-        python bilibili.py -e 400972 -q 80 
-        python bilibili.py -e 400972 -q 80 -s 2 -f 4
+        python bilibili.py -b BV1A54y1F7v6 
+        python bilibili.py -b BV1A54y1F7v6 -n test -t 16 -o
+        python bilibili.py -s 35220  # https://www.bilibili.com/bangumi/play/ss35220
+        python bilibili.py -e 6174   # https://www.bilibili.com/cheese/play/ep6174
+        python bilibili.py -k  # 启用断点续传
 
 ## 3. Tips
 
-* 目前已经支持番剧批量下载，番剧批量下载指定集数，需要输入番剧的ep号
-  
-    链接示例: 'https://www.bilibili.com/bangumi/play/ep400973' [ep号为400973]
-  
-    请用网页端打开番剧后再次选择任意一集，即可获取到ep号
-
-* 音频目前获取的默认为最高质量音频，未提供可选择接口，若有需求，可自行更改源码
-  
-  ```python
-  # line 85
-  def detail(bvid:str, cid:int, headers:dict, qn=112):
-      url = 'https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&qn={}&fourk=1&fnval=4048'.format(bvid, cid, qn)
-      res = requests.get(url=url, headers=headers)
-      if qn not in res.json()['data']['accept_quality']:
-          print("Can't find the video quality")
-          sys.exit(1)
-      else:
-          video_inf = res.json()['data']['dash']['video']
-          for i in video_inf:
-              if i['id'] == qn:
-                  video_url = i['baseUrl']
-                  audio_url = res.json()['data']['dash']['audio'][0]['baseUrl']  #  此处可以更改音频获取链接, 将[0]改成其他索引即可，建议索引范围在0~2
-                  return video_url, audio_url
-  ```
-
-* 目前B站cookies获取方式为二维码登录，cookies有效期在15天-30天之间，建议定期重新登录
-
-* 番剧BV号获取方法：
-    在网页端打开想要下载的番剧，浏览器全屏后，可以在番剧介绍处找到BV号
+* 使用该工具，需要登录B站账号，本下载器无破解功能，只能下载本身你的账号能看到的东西；若账号非VIP，则无法下载高质量视频
+* 电影下载：在网页端找到对应视频， 将浏览器全屏后，下翻至电影简介处，可以找到BV号<br/>
+* 番剧下载：在网页端搜索番剧名称，从搜索界面点击进入番剧观看页，此时地址栏便能找到类似于“ss35220”的ssid
+* 课程下载：在课程观看页，任意点击一个非当前正在播放的课程，之后地址栏便能刷选出类似于“ep6174”的epid，提供任意epid均可以获取全部课程信息
+* 断点续传：目前有一类视频是一个bvid下有多个视频分集，这种情况断点续传无法保存之前的选择状态，但仍可以完成程序意外关闭前正在进行的下载任务；
+          除此之外，其余视频均可以正常断点续传
