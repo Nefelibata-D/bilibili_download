@@ -372,6 +372,7 @@ def main_download(bvid: str, thread: int, download_path: str, output: int, name:
         print('')
         print("File name: " + file_name)
         print('')
+        download_log['dir'] = download_path
         download_log['name'] = i[1]
         download_log['download_url'] = (tuple[0], tuple[1])
         download_log['choice'] = tuple[2]
@@ -752,7 +753,7 @@ if __name__ == '__main__':
         if args.bvid:
             download_log = {
                 'bvid': args.bvid,
-                'dir': download_path,
+                'dir': None,
                 'download_url': None,
                 'file_type': None,
                 'name': None
