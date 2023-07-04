@@ -147,13 +147,16 @@ def get_lesson_list(headers, ep_id) -> list[dict[str, str, int]]:
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames
-def dolby(cid: int, headers: dict) -> tuple[str, str, int]:
-    url = 'https://api.bilibili.com//pgc/player/web/v2/playurl?support_multi_audio=true&cid={}&fnval=4048'.format(cid)
-    res = requests.get(url, headers=headers)
-    result = res.json()['result']['video_info']['dash']['dolby']['audio'][0]
-    url = result['base_url']
-    codecs = result['codecs']
-    size = result['size']
+def dolby(cid: int, headers: dict) -> tuple[str, str, int] | None:
+    try:
+        url = 'https://api.bilibili.com//pgc/player/web/v2/playurl?support_multi_audio=true&cid={}&fnval=4048'.format(cid)
+        res = requests.get(url, headers=headers)
+        result = res.json()['result']['video_info']['dash']['dolby']['audio'][0]
+        url = result['base_url']
+        codecs = result['codecs']
+        size = result['size']
+    except KeyError:  # 如果非电影, dolby音效与视频api共用, 该api无效
+        return None
 
     return url, codecs, size
 
@@ -177,7 +180,7 @@ def detail(bvid: str, cid: int, headers: dict, choice: list | None, type: int, e
         url = 'https://api.bilibili.com/pugv/player/web/playurl?fnval=16&fourk=1&ep_id={}'.format(ep)
     res = requests.get(url=url, headers=headers)
 
-    if choice is None:  # 在番剧批量下载中，用于保持用户最初选择
+    if choice is None:  # 在番剧批量下载中，若是第一次下载，要求用户进行选择
         choice = []
         os.system('cls')
 
@@ -226,11 +229,29 @@ def detail(bvid: str, cid: int, headers: dict, choice: list | None, type: int, e
 
         if have_dolby:  # 获取杜比音效信息
             dolby_inf = dolby(cid, headers)
-            base_url = dolby_inf[0]
-            codecs = dolby_inf[1]
-            size = round(dolby_inf[2] / 1024 / 1024)
+            if dolby_inf is not None:
+                base_url = dolby_inf[0]
+                codecs = dolby_inf[1]
+                size = round(dolby_inf[2] / 1024 / 1024)
+                all_inf.append((base_url, codecs, size))
+                print('[{:0>2}]  Size: {: <8}  Codec: {}         (dolby)'.format(times, str(size) + ' MB', codecs))
+                times += 1
+            else:  # 非电影视频的杜比音效
+                dolby_inf = res.json()['data']['dash']['dolby']['audio']
+                base_url = dolby_inf[0]['base_url']
+                codecs = dolby_inf[0]['codecs']
+                size = 'Null'
+                all_inf.append((base_url, codecs, size))
+                print('[{:0>2}]  Size: {: <8}  Codec: {}         (dolby)'.format(times, size, codecs))
+                times += 1
+
+        if res.json()['data']['dash']['flac'] is not None:
+            flac_inf = res.json()['data']['dash']['flac']['audio']
+            base_url = flac_inf['base_url']
+            codecs = flac_inf['codecs']
+            size = 'Null'
             all_inf.append((base_url, codecs, size))
-            print('[{:0>2}]  Size: {: <8}  Codec: {}     (杜比音效)'.format(times, str(size) + ' MB', codecs))
+            print('[{:0>2}]  Size: {: <8}  Codec: {}      (Hi-Res)'.format(times, size, codecs))
             times += 1
 
         for i in res.json()['data']['dash']['audio']:
@@ -253,7 +274,7 @@ def detail(bvid: str, cid: int, headers: dict, choice: list | None, type: int, e
 
         choice.append(video_number)
         choice.append(audio_number)
-    else:
+    else:  # 后期保持用户选择
         try:
             video = res.json()['data']['dash']['video'][int(choice[0])]['base_url']
         except IndexError:
@@ -522,7 +543,7 @@ class Download_threader:
                     file.write(content)
                     file.flush()
             except FileNotFoundError:
-                pass
+                continue
 
     def download_thread(self):
         # 多线程下载
@@ -639,6 +660,7 @@ if __name__ == '__main__':
         print('Last login time:  {}'.format(file['timestamp']))
     headers['Cookie'] = cookies
     time.sleep(1)
+
     if os.path.exists(path + r'\download_list') or os.path.exists(path + r'\download_log'):
         if args.keep is False:
             print('')
@@ -656,14 +678,14 @@ if __name__ == '__main__':
                         try:
                             os.remove(to_delete_path + r'\part{}.tmp'.format(i))
                         except FileNotFoundError:
-                            pass
+                            continue
                     os.remove(path + r'\download_list')
-                    if os.path.exists(to_delete_path + r'\video.mp4'):
-                        os.remove(to_delete_path + r'\video.mp4')
-                    if os.path.exists(to_delete_path + r'\audio.mp4'):
-                        os.remove(to_delete_path + r'\video.mp4')
                 except FileNotFoundError:
                     pass
+            if os.path.exists(to_delete_path + r'\video.mp4'):
+                os.remove(to_delete_path + r'\video.mp4')
+            if os.path.exists(to_delete_path + r'\audio.mp4'):
+                os.remove(to_delete_path + r'\video.mp4')
 
     if args.bvid is None and args.ssid is None and args.epid is None and args.keep is False:
         print('Please enter BVID or SESSION_ID or EPID')
@@ -731,22 +753,17 @@ if __name__ == '__main__':
                             file.write(json.dumps(download_list))
                         os.system('cls')
                 os.remove(path + r'\download_list')
-                print('')
-                print('Download completely')
-                print('Download Directory : ' + download_path)
-                print('')
-
             else:
                 print('')
                 print('Continue Downloading...')
                 breakpoint_download(headers, path)
                 os.remove(os.path.join(path, 'download_file_log'))
                 os.remove(os.path.join(path, 'download_log'))
-                os.system('cls')
-                print('')
-                print('Download completely')
-                print('Download Directory : ' + download_path)
-                print('')
+            os.system('cls')
+            print('')
+            print('Download completely')
+            print('Download Directory : ' + download_path)
+            print('')
 
             sys.exit(0)
 
