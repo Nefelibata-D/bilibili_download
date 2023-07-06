@@ -2,6 +2,8 @@
 
 一个基于python编写的B站视频下载器
 
+[![Security Status](https://www.murphysec.com/platform3/v31/badge/1676795760900915200.svg)](https://www.murphysec.com/console/report/1676795760733143040/1676795760900915200)
+
 ## 1. 项目使用的第三方库
 
 * requests

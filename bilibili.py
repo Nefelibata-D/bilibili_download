@@ -19,7 +19,6 @@ def login(headers: dict) -> str | None:
     oauth_key = res.json()['data']['oauthKey']
     img = qrcode.make(qrcode_url)
 
-    #  将二维码图片保存为图像
     with open('./qrcode.png', 'wb') as file:
         img.save(file)
     os.system('start qrcode.png')
@@ -147,7 +146,7 @@ def get_lesson_list(headers, ep_id) -> list[dict[str, str, int]]:
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames
-def dolby(cid: int, headers: dict) -> tuple[str, str, int] | None:
+def movies_dolby(cid: int, headers: dict) -> tuple[str, str, int] | None:
     try:
         url = 'https://api.bilibili.com//pgc/player/web/v2/playurl?support_multi_audio=true&cid={}&fnval=4048'.format(cid)
         res = requests.get(url, headers=headers)
@@ -228,7 +227,7 @@ def detail(bvid: str, cid: int, headers: dict, choice: list | None, type: int, e
         times = 0
 
         if have_dolby:  # 获取杜比音效信息
-            dolby_inf = dolby(cid, headers)
+            dolby_inf = movies_dolby(cid, headers)
             if dolby_inf is not None:
                 base_url = dolby_inf[0]
                 codecs = dolby_inf[1]
