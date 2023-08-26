@@ -244,14 +244,17 @@ def detail(bvid: str, cid: int, headers: dict, choice: list | None, type: int, e
                 print('[{:0>2}]  Size: {: <8}  Codec: {}         (dolby)'.format(times, size, codecs))
                 times += 1
 
-        if res.json()['data']['dash']['flac'] is not None:
-            flac_inf = res.json()['data']['dash']['flac']['audio']
-            base_url = flac_inf['base_url']
-            codecs = flac_inf['codecs']
-            size = 'Null'
-            all_inf.append((base_url, codecs, size))
-            print('[{:0>2}]  Size: {: <8}  Codec: {}      (Hi-Res)'.format(times, size, codecs))
-            times += 1
+        try:  # 课程的返回信息中没有flac项, 捕获异常
+            if res.json()['data']['dash']['flac'] is not None:
+                flac_inf = res.json()['data']['dash']['flac']['audio']
+                base_url = flac_inf['base_url']
+                codecs = flac_inf['codecs']
+                size = 'Null'
+                all_inf.append((base_url, codecs, size))
+                print('[{:0>2}]  Size: {: <8}  Codec: {}      (Hi-Res)'.format(times, size, codecs))
+                times += 1
+        except KeyError:
+            pass
 
         for i in res.json()['data']['dash']['audio']:
             base_url = i['base_url']
